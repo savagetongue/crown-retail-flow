@@ -15,12 +15,29 @@ type ProductFinderProps = {
 export default function ProductFinder({ cart, setCart }: ProductFinderProps) {
   const [search, setSearch] = useState("");
 
+  // Get the CROWN location
+  const { data: defaultLocation } = useQuery({
+    queryKey: ["default-location"],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("stock_locations")
+        .select("id")
+        .eq("name", "CROWN - The Premium Mens Wear")
+        .maybeSingle();
+      if (error) throw error;
+      return data;
+    },
+  });
+
   const { data: products } = useQuery({
     queryKey: ["products-finder", search],
     queryFn: async () => {
       let query = supabase
         .from("products")
-        .select("*")
+        .select(`
+          *,
+          product_stock(quantity, reserved, location_id)
+        `)
         .eq("active", true)
         .order("name");
 
@@ -37,8 +54,29 @@ export default function ProductFinder({ cart, setCart }: ProductFinderProps) {
     enabled: true,
   });
 
+  const getAvailableStock = (product: any) => {
+    if (!product.product_stock || product.product_stock.length === 0 || !defaultLocation) return 0;
+    const stock = product.product_stock.find((s: any) => s.location_id === defaultLocation.id);
+    return stock ? stock.quantity - stock.reserved : 0;
+  };
+
   const addToCart = (product: any) => {
+    const availableStock = getAvailableStock(product);
+    
+    if (availableStock <= 0) {
+      // Show error toast if using toast
+      alert(`Product "${product.name}" is out of stock!`);
+      return;
+    }
+
     const existing = cart.find((item) => item.product_id === product.id);
+    const currentQty = existing ? existing.qty : 0;
+
+    if (currentQty >= availableStock) {
+      alert(`Only ${availableStock} units available for "${product.name}"`);
+      return;
+    }
+
     if (existing) {
       setCart(
         cart.map((item) =>
@@ -80,27 +118,48 @@ export default function ProductFinder({ cart, setCart }: ProductFinderProps) {
       </div>
 
       <div className="space-y-2 max-h-[400px] overflow-y-auto">
-        {products?.map((product) => (
-          <div
-            key={product.id}
-            className="flex items-center justify-between p-3 rounded-lg border hover:bg-muted/50 transition-colors"
-          >
-            <div className="flex-1">
-              <div className="font-medium">{product.name}</div>
-              <div className="text-sm text-muted-foreground">
-                SKU: {product.sku} • {formatCurrency(Number(product.mrp))}
-              </div>
-            </div>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => addToCart(product)}
+        {products?.map((product) => {
+          const availableStock = getAvailableStock(product);
+          const isOutOfStock = availableStock <= 0;
+          const isLowStock = availableStock > 0 && availableStock <= 5;
+          
+          return (
+            <div
+              key={product.id}
+              className={`flex items-center justify-between p-3 rounded-lg border transition-colors ${
+                isOutOfStock ? 'opacity-50 bg-muted/30' : 'hover:bg-muted/50'
+              }`}
             >
-              <Plus className="h-4 w-4 mr-1" />
-              Add
-            </Button>
-          </div>
-        ))}
+              <div className="flex-1">
+                <div className="font-medium flex items-center gap-2">
+                  {product.name}
+                  {isLowStock && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-warning/10 text-warning">
+                      Low Stock
+                    </span>
+                  )}
+                  {isOutOfStock && (
+                    <span className="text-xs px-2 py-0.5 rounded-full bg-destructive/10 text-destructive">
+                      Out of Stock
+                    </span>
+                  )}
+                </div>
+                <div className="text-sm text-muted-foreground">
+                  SKU: {product.sku} • {formatCurrency(Number(product.mrp))} • Stock: {availableStock}
+                </div>
+              </div>
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={() => addToCart(product)}
+                disabled={isOutOfStock}
+              >
+                <Plus className="h-4 w-4 mr-1" />
+                Add
+              </Button>
+            </div>
+          );
+        })}
       </div>
     </div>
   );

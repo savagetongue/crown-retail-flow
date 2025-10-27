@@ -8,6 +8,8 @@ import { Button } from "@/components/ui/button";
 import { loadDemoData } from "@/lib/demo-data";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
+import { SalesChart } from "@/components/dashboard/SalesChart";
+import { subDays, format } from "date-fns";
 
 export default function Dashboard() {
   const [loadingDemo, setLoadingDemo] = useState(false);
@@ -28,12 +30,32 @@ export default function Dashboard() {
       const productCount = productsRes.count || 0;
       const lowStock = stockRes.data?.filter(s => s.available && s.available <= 5).length || 0;
 
+      // Calculate sales for last 7 days
+      const last7Days = Array.from({ length: 7 }, (_, i) => {
+        const date = subDays(new Date(), 6 - i);
+        return format(date, "MMM dd");
+      });
+
+      const salesByDay = last7Days.map((date) => ({
+        date,
+        revenue: 0,
+      }));
+
+      invoicesRes.data?.forEach((invoice) => {
+        const invoiceDate = format(new Date(invoice.created_at), "MMM dd");
+        const dayIndex = salesByDay.findIndex((d) => d.date === invoiceDate);
+        if (dayIndex !== -1) {
+          salesByDay[dayIndex].revenue += Number(invoice.total);
+        }
+      });
+
       return {
         totalRevenue,
         invoiceCount,
         avgOrderValue,
         productCount,
         lowStock,
+        salesByDay,
       };
     },
   });
@@ -123,6 +145,8 @@ export default function Dashboard() {
           </Card>
         ))}
       </div>
+
+      {stats?.salesByDay && <SalesChart data={stats.salesByDay} />}
 
       <div className="grid gap-6 md:grid-cols-2">
         <Card className="rounded-2xl">

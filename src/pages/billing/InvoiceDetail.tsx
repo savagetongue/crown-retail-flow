@@ -5,7 +5,11 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { formatCurrency } from "@/lib/utils";
 import { format } from "date-fns";
-import { Printer } from "lucide-react";
+import { Printer, Download } from "lucide-react";
+import { InvoicePDF } from "@/components/billing/InvoicePDF";
+import jsPDF from "jspdf";
+import html2canvas from "html2canvas";
+import { useState } from "react";
 import {
   Table,
   TableBody,
@@ -17,6 +21,7 @@ import {
 
 export default function InvoiceDetail() {
   const { id } = useParams<{ id: string }>();
+  const [isGeneratingPDF, setIsGeneratingPDF] = useState(false);
 
   const { data: invoice, isLoading } = useQuery({
     queryKey: ["invoice", id],
@@ -49,6 +54,47 @@ export default function InvoiceDetail() {
     window.print();
   };
 
+  const handleDownloadPDF = async () => {
+    if (!invoice) return;
+    
+    setIsGeneratingPDF(true);
+    try {
+      const pdfElement = document.getElementById("invoice-pdf");
+      if (!pdfElement) return;
+
+      // Temporarily show the PDF element
+      pdfElement.style.display = "block";
+
+      const canvas = await html2canvas(pdfElement, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#ffffff",
+      });
+
+      const imgData = canvas.toDataURL("image/png");
+      const pdf = new jsPDF({
+        orientation: "portrait",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const imgWidth = 210; // A4 width in mm
+      const imgHeight = (canvas.height * imgWidth) / canvas.width;
+
+      pdf.addImage(imgData, "PNG", 0, 0, imgWidth, imgHeight);
+      pdf.save(`Invoice-${invoice.invoice_number}.pdf`);
+
+      // Hide the PDF element again
+      pdfElement.style.display = "none";
+    } catch (error) {
+      console.error("Error generating PDF:", error);
+      alert("Failed to generate PDF. Please try again.");
+    } finally {
+      setIsGeneratingPDF(false);
+    }
+  };
+
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between print:hidden">
@@ -62,10 +108,16 @@ export default function InvoiceDetail() {
               : ""}
           </p>
         </div>
-        <Button onClick={handlePrint}>
-          <Printer className="h-4 w-4 mr-2" />
-          Print
-        </Button>
+        <div className="flex gap-2">
+          <Button onClick={handlePrint} variant="outline">
+            <Printer className="h-4 w-4 mr-2" />
+            Print
+          </Button>
+          <Button onClick={handleDownloadPDF} disabled={isGeneratingPDF}>
+            <Download className="h-4 w-4 mr-2" />
+            {isGeneratingPDF ? "Generating..." : "Download PDF"}
+          </Button>
+        </div>
       </div>
 
       <Card className="p-8 rounded-2xl space-y-6">
@@ -165,6 +217,11 @@ export default function InvoiceDetail() {
           </div>
         )}
       </Card>
+
+      {/* Hidden PDF Template for Download */}
+      <div style={{ display: "none" }}>
+        <InvoicePDF invoice={invoice} />
+      </div>
     </div>
   );
 }
