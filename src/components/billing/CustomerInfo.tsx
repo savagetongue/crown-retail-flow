@@ -1,3 +1,4 @@
+import React from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { supabase } from "@/lib/supabase";
 import { useNavigate } from "react-router-dom";
@@ -6,13 +7,6 @@ import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
 import { formatCurrency } from "@/lib/utils";
 import { CustomerData, CartItem } from "@/pages/billing/InvoiceBuilder";
 import { useToast } from "@/hooks/use-toast";
@@ -33,17 +27,43 @@ export default function CustomerInfo({
   const navigate = useNavigate();
   const { toast } = useToast();
 
-  const { data: locations } = useQuery({
-    queryKey: ["locations"],
+  const { data: defaultLocation } = useQuery({
+    queryKey: ["default-location"],
     queryFn: async () => {
+      const storeName = "CROWN - The Premium Mens Wear";
       const { data, error } = await supabase
         .from("stock_locations")
         .select("*")
-        .order("name");
+        .eq("name", storeName)
+        .maybeSingle();
+      
       if (error) throw error;
+      
+      // If location doesn't exist, create it
+      if (!data) {
+        const { data: newLocation, error: insertError } = await supabase
+          .from("stock_locations")
+          .insert({
+            name: storeName,
+            description: "Shreepur-Khandali Road, Pin - 413112, Tal-Malshiras, Dist-Solapur"
+          })
+          .select()
+          .single();
+        
+        if (insertError) throw insertError;
+        return newLocation;
+      }
+      
       return data;
     },
   });
+
+  // Auto-set location when it loads
+  React.useEffect(() => {
+    if (defaultLocation && !customer.location_id) {
+      setCustomer({ ...customer, location_id: defaultLocation.id });
+    }
+  }, [defaultLocation]);
 
   const createInvoiceMutation = useMutation({
     mutationFn: async () => {
@@ -118,26 +138,6 @@ export default function CustomerInfo({
             />
           </div>
 
-          <div>
-            <Label>Location *</Label>
-            <Select
-              value={customer.location_id}
-              onValueChange={(value) =>
-                setCustomer({ ...customer, location_id: value })
-              }
-            >
-              <SelectTrigger>
-                <SelectValue placeholder="Select location" />
-              </SelectTrigger>
-              <SelectContent>
-                {locations?.map((loc) => (
-                  <SelectItem key={loc.id} value={loc.id}>
-                    {loc.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
 
           <div>
             <Label>Notes</Label>
